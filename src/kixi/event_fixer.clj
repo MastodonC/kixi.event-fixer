@@ -92,13 +92,13 @@
                                 nil)))
   ([s3-base-dir prefix marker]
    (let [list-objects-res (s3/list-objects credentials (merge {:bucket-name s3-base-dir
-                                                               :prefix prefix
-                                                               :max-keys max-objects}
-                                                              (when marker
-                                                                {:marker marker})))]
+                                                                  :prefix prefix
+                                                                  :max-keys max-objects}
+                                                                 (when marker
+                                                                   {:marker marker})))]
      (concat (:object-summaries list-objects-res)
-             (when (:next-marker list-objects-res)
-               (hour->s3-object-summaries s3-base-dir prefix (:next-marker list-objects-res)))))))
+                (when (:next-marker list-objects-res)
+                  (hour->s3-object-summaries s3-base-dir prefix (:next-marker list-objects-res)))))))
 
 (defn object-summary->local-file
   [s3-base-dir local-base-dir]
@@ -224,11 +224,28 @@
   ([acc x]
    (inc acc)))
 
+
+(defn throttler
+  "Partitions seq into vectors containing all parts of an event"
+  [xf]
+  (let [a (atom 0)]
+    (fn
+      ([] (xf))
+      ([acc]
+       (xf acc))
+      ([acc x]
+       (when (> @a 90)
+         (Thread/sleep 1000)
+         (reset! a 0))
+       (swap! a inc)
+       (xf acc x)))))
+
 (defn download-s3-backups-and-transform
   []
   (transduce
    (comp (mapcat (hour->s3-object-summaries prod-backup-s3-base))
          (map prn-t)
+         throttler
          (map (object-summary->local-file prod-backup-s3-base local-old-format-base-dir))
          file->events
          event->event-plus-sequence-num
