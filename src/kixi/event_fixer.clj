@@ -40,12 +40,12 @@
     credentials))
 
 (defn witan-prod-creds
-  [mfa]
+  []
   (-> (federated-config)
-      (get-credentials :witan-prod "admin" mfa)))
+      (get-credentials :witan-prod "ro")))
 
 ;; In the REPL or here execute the following with appropriate MFA
-(def credentials (witan-prod-creds "267400"))
+(def credentials (witan-prod-creds))
 
 (def one-hour (t/hours 1))
 
