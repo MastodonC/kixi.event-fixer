@@ -1,7 +1,9 @@
 (ns kixi.event-fixer
   (:require [aero.core :as aero]
             [amazonica.aws.s3 :as s3]
-            [amazonica.core :as amazonica]
+            [amazonica.core :as amazonica :refer [with-client-config with-credential]]
+            [amazonica.aws.identitymanagement :as iam]
+            [amazonica.aws.securitytoken :as sts]
             [clj-time.core :as t]
             [clj-time.format :as f]
             [clj-time.periodic :as p]
@@ -12,6 +14,38 @@
             [kixi.old-format-parser :refer [file->events]])
   (:import [java.io File]
            [java.io ByteArrayInputStream]))
+
+(defn federated-config []
+  (-> (System/getProperty "user.home")
+      (str "/.aws/etc/client.edn")
+      (aero/read-config)))
+
+(defn get-credentials [config account type & mfa]
+  (let [{:keys [user trusted-profile trusted-account-id
+                trusted-role-readonly trusted-role-admin account-ids]} config
+        trusted-role (case type
+                       "ro" trusted-role-readonly
+                       "admin" trusted-role-admin
+                       :else (println (str "Unknown role type: " type)))
+        account-id (account-ids (keyword account))
+        role-arn (str "arn:aws:iam::" account-id ":role/" trusted-role)
+        mfa-device-serial-number (str "arn:aws:iam::" trusted-account-id ":mfa/" user)
+        mfa-token (first mfa)
+        ar (with-credential {:profile trusted-profile}
+             (if mfa-token
+               (sts/assume-role :role-arn role-arn :role-session-name account
+                                :serial-number mfa-device-serial-number :token-code mfa-token)
+               (sts/assume-role :role-arn role-arn :role-session-name account)))
+        credentials (ar :credentials)]
+    credentials))
+
+(defn witan-prod-creds
+  [mfa]
+  (-> (federated-config)
+      (get-credentials :witan-prod "admin" mfa)))
+
+;; In the REPL or here execute the following with appropriate MFA
+(def credentials (witan-prod-creds "267400"))
 
 (def one-hour (t/hours 1))
 
@@ -57,11 +91,11 @@
                                 (hour->s3-prefix hour)
                                 nil)))
   ([s3-base-dir prefix marker]
-   (let [list-objects-res (s3/list-objects (merge {:bucket-name s3-base-dir
-                                                   :prefix prefix
-                                                   :max-keys max-objects}
-                                                  (when marker
-                                                    {:marker marker})))]
+   (let [list-objects-res (s3/list-objects credentials (merge {:bucket-name s3-base-dir
+                                                               :prefix prefix
+                                                               :max-keys max-objects}
+                                                              (when marker
+                                                                {:marker marker})))]
      (concat (:object-summaries list-objects-res)
              (when (:next-marker list-objects-res)
                (hour->s3-object-summaries s3-base-dir prefix (:next-marker list-objects-res)))))))
@@ -70,7 +104,7 @@
   [s3-base-dir local-base-dir]
   (fn
     [s3-object-summary]
-    (let [s3-object (s3/get-object :bucket-name s3-base-dir
+    (let [s3-object (s3/get-object credentials :bucket-name s3-base-dir
                                    :key (:key s3-object-summary))
           ^File local-file (io/file local-base-dir (last (string/split (:key s3-object-summary) #"/")))]
       (when-not (.exists local-file)
@@ -78,10 +112,6 @@
             (io/copy (:object-content s3-object)
                      local-file)))
       local-file)))
-
-
-
-
 
 (defn uuid
   [_]
@@ -176,7 +206,7 @@
       (spit file "\n" :append true))))
 
 
-(def backup-start-hour "2017-04-29T16")
+(def backup-start-hour "2017-04-18T00")
 
 ;(def backups-old-format-end-hour "2017-10-04T09")
 
@@ -207,11 +237,6 @@
    counter
    (hour-sequence backup-start-hour
                   backups-old-format-end-hour)))
-
-
-
-
-
 
 (defn valid-event-line?
   [^String encoded-str]
