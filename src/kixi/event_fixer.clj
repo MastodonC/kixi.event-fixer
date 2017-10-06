@@ -12,65 +12,19 @@
             [clojure.spec.alpha :as s]
             [clojure.string :as string]
             [cognitect.transit :as transit]
-            [kixi.old-format-parser :refer [file->events]])
-  (:import [java.io File]
-           [java.io ByteArrayInputStream]))
-
-(defn federated-config []
-  (-> (System/getProperty "user.home")
-      (str "/.aws/etc/client.edn")
-      (aero/read-config)))
-
-(defn get-credentials [config account type & mfa]
-  (let [{:keys [user trusted-profile trusted-account-id
-                trusted-role-readonly trusted-role-admin account-ids]} config
-        trusted-role (case type
-                       "ro" trusted-role-readonly
-                       "admin" trusted-role-admin
-                       :else (println (str "Unknown role type: " type)))
-        account-id (account-ids (keyword account))
-        role-arn (str "arn:aws:iam::" account-id ":role/" trusted-role)
-        mfa-device-serial-number (str "arn:aws:iam::" trusted-account-id ":mfa/" user)
-        mfa-token (first mfa)
-        ar (with-credential {:profile trusted-profile}
-             (if mfa-token
-               (sts/assume-role :role-arn role-arn :role-session-name account
-                                :serial-number mfa-device-serial-number :token-code mfa-token)
-               (sts/assume-role :role-arn role-arn :role-session-name account)))
-        credentials (ar :credentials)]
-    credentials))
-
-(defn witan-prod-creds
-  []
-  (-> (federated-config)
-      (get-credentials :witan-prod "ro")))
+            [kixi.old-format-parser :refer [file->events]]
+            [kixi.maws :refer [witan-prod-creds]]
+            [kixi.hour-sequence :refer [hour-sequence]]
+            [kixi.partition-keys :refer [event->partition-key]])
+  (:import [java.io
+            File
+            ByteArrayInputStream
+            InputStream]))
 
 ;; Run Ctrl-c Ctrl-k on the buffer to generate new credentials
 (def credentials (assoc (witan-prod-creds) :client-config {:max-connections 50
                                                            :connection-timeout 5000
                                                            :socket-timeout 5000}))
-
-(def one-hour (t/hours 1))
-
-(def datehour-formatter
-  (f/formatter :date-hour))
-
-(def parse-datahour
-  (partial f/parse datehour-formatter))
-
-(def unparse-datahour
-  (partial f/unparse datehour-formatter))
-
-(defn hour-sequence
-  [start-datehour end-datehour]
-  (let [end-datehour (or end-datehour
-                         (unparse-datahour (t/now)))
-        start (parse-datahour start-datehour)
-        end (parse-datahour end-datehour)]
-    (p/periodic-seq start
-                    (t/plus end
-                            one-hour)
-                    one-hour)))
 
 (defn hour->s3-prefix
   [hour]
@@ -113,51 +67,9 @@
             (let [s3-object (s3/get-object credentials
                                            :bucket-name s3-base-dir
                                            :key (:key s3-object-summary))]
-              (with-open [in (:input-stream s3-object)]
+              (with-open [^InputStream in (:input-stream s3-object)]
                 (io/copy in local-file)))))
       local-file)))
-
-(defn uuid
-  [_]
-  (str (java.util.UUID/randomUUID)))
-
-(def event-type-version->partition-key-fn
-  {[:kixi.datastore.file-metadata/updated "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.metadatastore/id])
-   [:kixi.datastore.filestore/upload-link-created "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.filestore//id])
-   [:kixi.heimdall/user-logged-in "1.0.0"] uuid
-   [:kixi.datastore.file/created "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.filestore//id])
-   [:kixi.datastore.metadatastore/update-rejected "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.metadatastore/id])
-   [:kixi.datastore.filestore/download-link-created "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.metadatastore/id])
-   [:kixi.heimdall/group-created "1.0.0"] #(get-in % [:kixi.comms.event/payload :user-id])
-   [:kixi.heimdall/user-created "1.0.0"] uuid
-   [:kixi.heimdall/invite-created "1.0.0"] uuid
-   [:kixi.mailer/mail-accepted "1.0.0"] uuid
-   })
-
-(def event->event-type-version
-  (juxt #(or (:kixi.event/type %) (:kixi.comms.event/key %))
-        #(or (:kixi.event/version %) (:kixi.comms.event/version %))))
-
-(defn new-format-datastore-event?
-  [event]
-  (some-> event
-          :kixi.event/type
-          namespace
-          (= "kixi.datastore")))
-
-(defn event->partition-key
-  [{:keys [event]}]
-  (if-let [partition-key-fn (->> event
-                                 event->event-type-version
-                                 event-type-version->partition-key-fn)]
-    (partition-key-fn event)
-    (if (new-format-datastore-event? event)
-      (if-let [partition-key (or (:kixi.datastore.metadatastore/id event)
-                                 (:kixi.datastore.schemastore/id event))]
-        partition-key
-        (prn "Unknown event type: " (event->event-type-version event) "-" event))
-      (prn "Unknown event type: " (event->event-type-version event) "-" event))))
-
 
 (defn reshape-event
   [event]
@@ -180,12 +92,10 @@
          (xf acc (assoc event
                         :sequence-num num)))))))
 
-
 (defn prn-t
   [x]
   (prn x)
   x)
-
 
 (defn event->file-name
   [local-base-dir
@@ -227,31 +137,6 @@
   ([acc] acc)
   ([acc x]
    (inc acc)))
-
-
-(defn throttler
-  "Slow things down"
-  [xf]
-  (let [a (atom 0)]
-    (fn
-      ([] (xf))
-      ([acc]
-       (xf acc))
-      ([acc x]
-       (when (= 1 (mod @a 2))
-         (println "Having a little sleep")
-         (Thread/sleep 1000))
-       (println @a)
-       (swap! a inc)
-       (xf acc x)))))
-
- (defn prn-counter [xf]
-   (fn
-     ([] (xf))
-     ([result] (xf result))
-     ([result input]
-      (println result)
-      (xf result input))))
 
 (defn download-s3-backups-and-transform
   []
