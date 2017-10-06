@@ -66,7 +66,7 @@
       ([acc]
        (let [complete-seq (vec (.toArray a))]
          (.clear a)
-         (->> complete-seq
+         (->> [(ffirst complete-seq) (map second complete-seq)]
               (xf acc)
               xf)))
       ([acc [file buffer]]
@@ -107,7 +107,7 @@
   (let [sequence-num-seq (atom (range (Long/MAX_VALUE)))]
     (fn
       ([] (xf))
-      ([acc] acc)
+      ([acc] (xf acc))
       ([acc event]
        (let [num (first @sequence-num-seq)]
          (swap! sequence-num-seq rest)

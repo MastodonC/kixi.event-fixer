@@ -85,7 +85,7 @@
   (let [sequence-num-seq (atom (range (Long/MAX_VALUE)))]
     (fn
       ([] (xf))
-      ([acc] acc)
+      ([acc] (xf acc))
       ([acc event]
        (let [num (first @sequence-num-seq)]
          (swap! sequence-num-seq rest)
@@ -124,7 +124,7 @@
 
 ;(def backups-old-format-end-hour "2017-10-04T09")
 
-(def backups-old-format-end-hour "2017-05-18T18")
+(def backups-old-format-end-hour "2017-04-18T18")
 
 (def staging-backup-s3-base "staging-witan-event-backup")
 (def prod-backup-s3-base "prod-witan-event-backup")
@@ -142,7 +142,6 @@
   []
   (transduce
    (comp (mapcat (hour->s3-object-summaries prod-backup-s3-base))
-         (map prn-t)
          (map (object-summary->local-file prod-backup-s3-base local-old-format-base-dir))
          file->events
          event->event-plus-sequence-num
