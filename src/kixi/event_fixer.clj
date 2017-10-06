@@ -45,7 +45,10 @@
   (-> (federated-config)
       (get-credentials :witan-prod "ro")))
 
-(def credentials (assoc (witan-prod-creds) :client-config {:max-connections 50 :connection-timeout 5000 :socket-timeout 5000}))
+;; Run Ctrl-c Ctrl-k on the buffer to generate new credentials
+(def credentials (assoc (witan-prod-creds) :client-config {:max-connections 50
+                                                           :connection-timeout 5000
+                                                           :socket-timeout 5000}))
 
 (def one-hour (t/hours 1))
 
@@ -107,12 +110,11 @@
     (let [^File local-file (io/file local-base-dir (last (string/split (:key s3-object-summary) #"/")))]
       (when-not (.exists local-file)
         (do (.createNewFile local-file)
-            (let [s3-object (s3/get-object credentials :bucket-name s3-base-dir
-                                           :key (:key s3-object-summary))
-                  in (:input-stream s3-object)]
-              (io/copy in
-                       local-file)
-              (. in close))))
+            (let [s3-object (s3/get-object credentials
+                                           :bucket-name s3-base-dir
+                                           :key (:key s3-object-summary))]
+              (with-open [in (:input-stream s3-object)]
+                (io/copy in local-file)))))
       local-file)))
 
 (defn uuid
