@@ -1,25 +1,16 @@
 (ns kixi.event-fixer
   (:gen-class)
-  (:require [aero.core :as aero]
-            [amazonica.aws.s3 :as s3]
-            [amazonica.core :as amazonica :refer [with-client-config with-credential]]
-            [amazonica.aws.identitymanagement :as iam]
-            [amazonica.aws.securitytoken :as sts]
+  (:require [amazonica.aws.s3 :as s3]
             [clj-time.core :as t]
-            [clj-time.format :as f]
-            [clj-time.periodic :as p]
             [clojure.java.io :as io]
-            [clojure.spec.alpha :as s]
             [clojure.string :as string]
             [cognitect.transit :as transit]
-            [kixi.old-format-parser :refer [file->events]]
-            [kixi.maws :refer [witan-prod-creds]]
             [kixi.hour-sequence :refer [hour-sequence]]
-            [kixi.partition-keys :refer [event->partition-key]])
-  (:import [java.io
-            File
-            ByteArrayInputStream
-            InputStream]))
+            [kixi.maws :refer [witan-prod-creds]]
+            [kixi.old-format-parser :refer [file->events]]
+            [kixi.partition-keys :refer [event->partition-key]]
+            [kixi.transit-writer :refer [write-new-format]])
+  (:import [java.io ByteArrayInputStream File InputStream]))
 
 ;; Run Ctrl-c Ctrl-k on the buffer to generate new credentials
 (def credentials (assoc (witan-prod-creds) :client-config {:max-connections 50
@@ -96,29 +87,6 @@
   [x]
   (prn x)
   x)
-
-(defn event->file-name
-  [local-base-dir
-   {:keys [^File file] :as event}]
-  (apply str local-base-dir "/" (.getName file)))
-
-(defn write-new-format
-  [local-base-dir]
-  (fn [event]
-    (let [file (io/file (event->file-name local-base-dir event))]
-      (when-not (.exists file)
-        (.createNewFile file))
-      (with-open [out (io/output-stream file :append true)]
-        (if-not (:error event)
-          (transit/write (transit/writer out :json)
-                         (select-keys event
-                                      [:event
-                                       :sequence-num
-                                       :partition-key
-                                       :dependencies]))
-          (spit file (str event) :append true)))
-      (spit file "\n" :append true))))
-
 
 (def backup-start-hour "2017-04-18T16")
 
