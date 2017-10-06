@@ -1,7 +1,10 @@
 (ns kixi.event-fixer
+  (:gen-class)
   (:require [aero.core :as aero]
             [amazonica.aws.s3 :as s3]
-            [amazonica.core :as amazonica]
+            [amazonica.core :as amazonica :refer [with-client-config with-credential]]
+            [amazonica.aws.identitymanagement :as iam]
+            [amazonica.aws.securitytoken :as sts]
             [clj-time.core :as t]
             [clj-time.format :as f]
             [clj-time.periodic :as p]
@@ -12,6 +15,40 @@
             [kixi.old-format-parser :refer [file->events]])
   (:import [java.io File]
            [java.io ByteArrayInputStream]))
+
+(defn federated-config []
+  (-> (System/getProperty "user.home")
+      (str "/.aws/etc/client.edn")
+      (aero/read-config)))
+
+(defn get-credentials [config account type & mfa]
+  (let [{:keys [user trusted-profile trusted-account-id
+                trusted-role-readonly trusted-role-admin account-ids]} config
+        trusted-role (case type
+                       "ro" trusted-role-readonly
+                       "admin" trusted-role-admin
+                       :else (println (str "Unknown role type: " type)))
+        account-id (account-ids (keyword account))
+        role-arn (str "arn:aws:iam::" account-id ":role/" trusted-role)
+        mfa-device-serial-number (str "arn:aws:iam::" trusted-account-id ":mfa/" user)
+        mfa-token (first mfa)
+        ar (with-credential {:profile trusted-profile}
+             (if mfa-token
+               (sts/assume-role :role-arn role-arn :role-session-name account
+                                :serial-number mfa-device-serial-number :token-code mfa-token)
+               (sts/assume-role :role-arn role-arn :role-session-name account)))
+        credentials (ar :credentials)]
+    credentials))
+
+(defn witan-prod-creds
+  []
+  (-> (federated-config)
+      (get-credentials :witan-prod "ro")))
+
+;; Run Ctrl-c Ctrl-k on the buffer to generate new credentials
+(def credentials (assoc (witan-prod-creds) :client-config {:max-connections 50
+                                                           :connection-timeout 5000
+                                                           :socket-timeout 5000}))
 
 (def one-hour (t/hours 1))
 
@@ -57,31 +94,28 @@
                                 (hour->s3-prefix hour)
                                 nil)))
   ([s3-base-dir prefix marker]
-   (let [list-objects-res (s3/list-objects (merge {:bucket-name s3-base-dir
-                                                   :prefix prefix
-                                                   :max-keys max-objects}
-                                                  (when marker
-                                                    {:marker marker})))]
+   (let [list-objects-res (s3/list-objects credentials (merge {:bucket-name s3-base-dir
+                                                                  :prefix prefix
+                                                                  :max-keys max-objects}
+                                                                 (when marker
+                                                                   {:marker marker})))]
      (concat (:object-summaries list-objects-res)
-             (when (:next-marker list-objects-res)
-               (hour->s3-object-summaries s3-base-dir prefix (:next-marker list-objects-res)))))))
+                (when (:next-marker list-objects-res)
+                  (hour->s3-object-summaries s3-base-dir prefix (:next-marker list-objects-res)))))))
 
 (defn object-summary->local-file
   [s3-base-dir local-base-dir]
   (fn
     [s3-object-summary]
-    (let [s3-object (s3/get-object :bucket-name s3-base-dir
-                                   :key (:key s3-object-summary))
-          ^File local-file (io/file local-base-dir (last (string/split (:key s3-object-summary) #"/")))]
+    (let [^File local-file (io/file local-base-dir (last (string/split (:key s3-object-summary) #"/")))]
       (when-not (.exists local-file)
         (do (.createNewFile local-file)
-            (io/copy (:object-content s3-object)
-                     local-file)))
+            (let [s3-object (s3/get-object credentials
+                                           :bucket-name s3-base-dir
+                                           :key (:key s3-object-summary))]
+              (with-open [in (:input-stream s3-object)]
+                (io/copy in local-file)))))
       local-file)))
-
-
-
-
 
 (defn uuid
   [_]
@@ -176,7 +210,7 @@
       (spit file "\n" :append true))))
 
 
-(def backup-start-hour "2017-04-29T16")
+(def backup-start-hour "2017-04-18T16")
 
 ;(def backups-old-format-end-hour "2017-10-04T09")
 
@@ -194,6 +228,31 @@
   ([acc x]
    (inc acc)))
 
+
+(defn throttler
+  "Slow things down"
+  [xf]
+  (let [a (atom 0)]
+    (fn
+      ([] (xf))
+      ([acc]
+       (xf acc))
+      ([acc x]
+       (when (= 1 (mod @a 2))
+         (println "Having a little sleep")
+         (Thread/sleep 1000))
+       (println @a)
+       (swap! a inc)
+       (xf acc x)))))
+
+ (defn prn-counter [xf]
+   (fn
+     ([] (xf))
+     ([result] (xf result))
+     ([result input]
+      (println result)
+      (xf result input))))
+
 (defn download-s3-backups-and-transform
   []
   (transduce
@@ -207,11 +266,6 @@
    counter
    (hour-sequence backup-start-hour
                   backups-old-format-end-hour)))
-
-
-
-
-
 
 (defn valid-event-line?
   [^String encoded-str]
