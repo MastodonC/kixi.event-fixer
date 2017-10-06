@@ -1,4 +1,5 @@
 (ns kixi.event-fixer
+  (:gen-class)
   (:require [aero.core :as aero]
             [amazonica.aws.s3 :as s3]
             [amazonica.core :as amazonica :refer [with-client-config with-credential]]
@@ -44,8 +45,7 @@
   (-> (federated-config)
       (get-credentials :witan-prod "ro")))
 
-;; In the REPL or here execute the following with appropriate MFA
-(def credentials (witan-prod-creds))
+(def credentials (assoc (witan-prod-creds) :client-config {:max-connections 50 :connection-timeout 5000 :socket-timeout 5000}))
 
 (def one-hour (t/hours 1))
 
@@ -104,13 +104,15 @@
   [s3-base-dir local-base-dir]
   (fn
     [s3-object-summary]
-    (let [s3-object (s3/get-object credentials :bucket-name s3-base-dir
-                                   :key (:key s3-object-summary))
-          ^File local-file (io/file local-base-dir (last (string/split (:key s3-object-summary) #"/")))]
+    (let [^File local-file (io/file local-base-dir (last (string/split (:key s3-object-summary) #"/")))]
       (when-not (.exists local-file)
         (do (.createNewFile local-file)
-            (io/copy (:object-content s3-object)
-                     local-file)))
+            (let [s3-object (s3/get-object credentials :bucket-name s3-base-dir
+                                           :key (:key s3-object-summary))
+                  in (:input-stream s3-object)]
+              (io/copy in
+                       local-file)
+              (. in close))))
       local-file)))
 
 (defn uuid
@@ -206,7 +208,7 @@
       (spit file "\n" :append true))))
 
 
-(def backup-start-hour "2017-04-18T00")
+(def backup-start-hour "2017-04-18T16")
 
 ;(def backups-old-format-end-hour "2017-10-04T09")
 
@@ -226,7 +228,7 @@
 
 
 (defn throttler
-  "Partitions seq into vectors containing all parts of an event"
+  "Slow things down"
   [xf]
   (let [a (atom 0)]
     (fn
@@ -234,18 +236,26 @@
       ([acc]
        (xf acc))
       ([acc x]
-       (when (> @a 90)
-         (Thread/sleep 1000)
-         (reset! a 0))
+       (when (= 1 (mod @a 2))
+         (println "Having a little sleep")
+         (Thread/sleep 1000))
+       (println @a)
        (swap! a inc)
        (xf acc x)))))
+
+ (defn prn-counter [xf]
+   (fn
+     ([] (xf))
+     ([result] (xf result))
+     ([result input]
+      (println result)
+      (xf result input))))
 
 (defn download-s3-backups-and-transform
   []
   (transduce
    (comp (mapcat (hour->s3-object-summaries prod-backup-s3-base))
          (map prn-t)
-         throttler
          (map (object-summary->local-file prod-backup-s3-base local-old-format-base-dir))
          file->events
          event->event-plus-sequence-num
