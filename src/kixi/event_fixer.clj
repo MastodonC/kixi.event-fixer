@@ -9,7 +9,8 @@
             [kixi.maws :refer [witan-prod-creds]]
             [kixi.old-format-parser :refer [file->events]]
             [kixi.partition-keys :refer [event->partition-key]]
-            [kixi.transit-writer :refer [write-new-format]])
+            [kixi.transit-writer :refer [write-new-format]]
+            [kixi.group-event-fixer :refer [correct-group-created-events]])
   (:import [java.io ByteArrayInputStream File InputStream]))
 
 ;; Run Ctrl-c Ctrl-k on the buffer to generate new credentials
@@ -92,7 +93,7 @@
 
 ;(def backups-old-format-end-hour "2017-10-04T09")
 
-(def backups-old-format-end-hour "2017-04-18T18")
+(def backups-old-format-end-hour "2017-10-16T12")
 
 (def staging-backup-s3-base "staging-witan-event-backup")
 (def prod-backup-s3-base "prod-witan-event-backup")
@@ -112,12 +113,18 @@
    (comp (mapcat (hour->s3-object-summaries prod-backup-s3-base))
          (map (object-summary->local-file prod-backup-s3-base local-old-format-base-dir))
          file->events
+         (keep correct-group-created-events)
          event->event-plus-sequence-num
          (map reshape-event)
          (map (write-new-format local-new-format-base-dir)))
    counter
    (hour-sequence backup-start-hour
                   backups-old-format-end-hour)))
+
+
+
+
+
 
 (defn valid-event-line?
   [^String encoded-str]
@@ -151,7 +158,9 @@
 (defn validate-new-format-files
   []
   (transduce
-   (map file->error-report)
+   (comp (map file->error-report)
+         (filter (fn [report]
+                   (not (zero? (:error (first (vals report))))))))
    report-errors
    (rest
     (file-seq
