@@ -2,6 +2,7 @@
   (:require [clojure.test :refer :all]
             [kixi.event-fixer :refer :all]
             [kixi.old-format-parser :refer [file->events]]
+            [kixi.file-size :refer [correct-file-size]]
             [clojure.java.io :as io]))
 
 
@@ -99,12 +100,31 @@
 
 (deftest prod-witan-event-1-2017-07-11-09-03-30-800fbb87-bbae-4128-8c0b-780ae2c1d113
   (let [file (io/file "./event-log/old-format/prod-witan-event-1-2017-07-11-09-03-30-800fbb87-bbae-4128-8c0b-780ae2c1d113")]
-    (is (= []
+    (is (empty?
            (transduce
             (comp file->events
                   (filter :error))
             conj
             [file])))))
+
+(deftest file-size-byte-count-fixed
+  (let [file (io/file "./event-log/old-format/prod-witan-event-1-2017-07-11-09-03-30-800fbb87-bbae-4128-8c0b-780ae2c1d113")
+        file-created-events (into []
+                                  (comp file->events
+                                        (filter #(or (= :kixi.datastore.file/created
+                                                        (get-in % [:event :kixi.comms.event/key]))
+                                                     (= :kixi.datastore.communication-specs/file-metadata-created
+                                                        (get-in % [:event :kixi.comms.event/payload :kixi.datastore.communication-specs/file-metadata-update-type]))))
+                                        (map correct-file-size))
+                                  [file])]
+    (is (= 4
+           (count file-created-events)))
+    (is (empty?
+         (filter #{:FIX-BYTE-COUNT}
+                 (map #(or (:kixi.datastore.metadatastore/size-bytes %)
+                           ((comp :kixi.datastore.metadatastore/size-bytes :kixi.datastore.metadatastore/file-metadata) %))
+                      (map (comp :kixi.comms.event/payload :event)
+                           file-created-events)))))))
 
 (deftest read-md-count-doesnt-over-read
   (let [file (io/file "./event-log/old-format/prod-witan-event-1-2017-06-30-11-48-50-201ed935-d32f-4660-88b6-6e1d4a64bf7f")]
@@ -117,24 +137,3 @@
                  (map :kixi.datastore.filestore/upload-link))
             conj
             [file])))))
-
-
-(deftest fill-rainbox
-  (is (= []
-         (transduce
-          (comp file->events (filter :error))
-          conj
-          (take 5
-                (rest
-                 (file-seq
-                  (io/file local-old-format-base-dir))))))))
-
-(comment
-  (deftest broken_bytes
-    (let [in (DataInputStream.
-              (io/input-stream
-               (io/file
-                "./test-resources/big-test-file")))]
-      (is (= []
-             (nippy/thaw-delimited-maps-from-in in)))
-      )))

@@ -7,8 +7,7 @@
    [kixi.nippy
     [utils       :as utils]
     [compression :as compression]
-    [encryption :as encryption]]
-   [kixi.short-rainbow-table :as short-rainbow])
+    [encryption :as encryption]])
 
   (:import
    [java.io ByteArrayInputStream ByteArrayOutputStream DataInputStream

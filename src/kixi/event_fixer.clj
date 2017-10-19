@@ -1,16 +1,18 @@
 (ns kixi.event-fixer
   (:gen-class)
   (:require [amazonica.aws.s3 :as s3]
+            [baldr.core :as baldr]
             [clj-time.core :as t]
             [clojure.java.io :as io]
             [clojure.string :as string]
-            [cognitect.transit :as transit]
+            [kixi.group-event-fixer :refer [correct-group-created-events]]
             [kixi.hour-sequence :refer [hour-sequence]]
             [kixi.maws :refer [witan-prod-creds]]
+            [kixi.new-file-writer :refer [write-new-format]]
             [kixi.old-format-parser :refer [file->events]]
             [kixi.partition-keys :refer [event->partition-key]]
-            [kixi.transit-writer :refer [write-new-format]]
-            [kixi.group-event-fixer :refer [correct-group-created-events]])
+            [kixi.file-size :refer [correct-file-size]]
+            [taoensso.nippy :as nippy])
   (:import [java.io ByteArrayInputStream File InputStream]))
 
 ;; Run Ctrl-c Ctrl-k on the buffer to generate new credentials
@@ -67,9 +69,7 @@
   [event]
   (if-not (:error event)
     (assoc event
-           :partition-key (event->partition-key event)
-           :dependencies {:transit "0.8.300"
-                          :cheshire "5.7.0"})
+           :partition-key (event->partition-key event))
     event))
 
 (defn event->event-plus-sequence-num
@@ -89,11 +89,10 @@
   (prn x)
   x)
 
-(def backup-start-hour "2017-04-18T16")
+(def backup-start-hour "2017-04-14T16")
 
-;(def backups-old-format-end-hour "2017-10-04T09")
-
-(def backups-old-format-end-hour "2017-10-16T12")
+;(def backups-old-format-end-hour "2017-10-16T12")
+(def backups-old-format-end-hour "2017-10-18T12")
 
 (def staging-backup-s3-base "staging-witan-event-backup")
 (def prod-backup-s3-base "prod-witan-event-backup")
@@ -114,6 +113,7 @@
          (map (object-summary->local-file prod-backup-s3-base local-old-format-base-dir))
          file->events
          (keep correct-group-created-events)
+         (map correct-file-size)
          event->event-plus-sequence-num
          (map reshape-event)
          (map (write-new-format local-new-format-base-dir)))
@@ -121,19 +121,15 @@
    (hour-sequence backup-start-hour
                   backups-old-format-end-hour)))
 
-
-
-
-
-
-(defn valid-event-line?
-  [^String encoded-str]
+(defn valid-event?
+  [event]
   (try
-    (transit/read
-     (transit/reader
-      (ByteArrayInputStream. (.getBytes encoded-str))
-      :json))
-    true
+    (->> (update event
+                 :event
+                 nippy/thaw)
+         :event
+         (#(or :kixi.comms.event/key %
+               :kixi.event/type %)))
     (catch Exception e
       false)))
 
@@ -141,13 +137,15 @@
   [^File file]
   {(keyword (.getName file))
    (reduce
-    (fn [report event-line]
-      (if (valid-event-line? event-line)
+    (fn [report event]
+      (if (valid-event? event)
         (update report :valid inc)
         (update report :error inc)))
     {:valid 0
      :error 0}
-    (line-seq (io/reader file)))})
+    (map
+     nippy/thaw
+     (baldr/baldr-seq (io/input-stream file))))})
 
 (defn report-errors
   ([] {})
@@ -165,3 +163,13 @@
    (rest
     (file-seq
      (io/file local-new-format-base-dir)))))
+
+(defn peak-files
+  []
+  (->> (io/file "/home/tom/Documents/clojure/kixi.event-fixer/event-log/new-format")
+       file-seq
+       (map io/input-stream)
+       (mapcat baldr/baldr-seq)
+       (map nippy/thaw)
+       (map #(update % :event nippy/thaw))
+       ))
