@@ -1,25 +1,19 @@
 (ns kixi.event-fixer
   (:gen-class)
-  (:require [aero.core :as aero]
-            [amazonica.aws.s3 :as s3]
-            [amazonica.core :as amazonica :refer [with-client-config with-credential]]
-            [amazonica.aws.identitymanagement :as iam]
-            [amazonica.aws.securitytoken :as sts]
+  (:require [amazonica.aws.s3 :as s3]
+            [baldr.core :as baldr]
             [clj-time.core :as t]
-            [clj-time.format :as f]
-            [clj-time.periodic :as p]
             [clojure.java.io :as io]
-            [clojure.spec.alpha :as s]
             [clojure.string :as string]
-            [cognitect.transit :as transit]
-            [kixi.old-format-parser :refer [file->events]]
-            [kixi.maws :refer [witan-prod-creds]]
+            [kixi.group-event-fixer :refer [correct-group-created-events]]
             [kixi.hour-sequence :refer [hour-sequence]]
-            [kixi.partition-keys :refer [event->partition-key]])
-  (:import [java.io
-            File
-            ByteArrayInputStream
-            InputStream]))
+            [kixi.maws :refer [witan-prod-creds]]
+            [kixi.new-file-writer :refer [write-new-format]]
+            [kixi.old-format-parser :refer [file->events]]
+            [kixi.partition-keys :refer [event->partition-key]]
+            [kixi.file-size :refer [correct-file-size]]
+            [taoensso.nippy :as nippy])
+  (:import [java.io ByteArrayInputStream File InputStream]))
 
 ;; Run Ctrl-c Ctrl-k on the buffer to generate new credentials
 (def credentials (assoc (witan-prod-creds) :client-config {:max-connections 50
@@ -75,9 +69,7 @@
   [event]
   (if-not (:error event)
     (assoc event
-           :partition-key (event->partition-key event)
-           :dependencies {:transit "0.8.300"
-                          :cheshire "5.7.0"})
+           :partition-key (event->partition-key event))
     event))
 
 (defn event->event-plus-sequence-num
@@ -85,7 +77,7 @@
   (let [sequence-num-seq (atom (range (Long/MAX_VALUE)))]
     (fn
       ([] (xf))
-      ([acc] acc)
+      ([acc] (xf acc))
       ([acc event]
        (let [num (first @sequence-num-seq)]
          (swap! sequence-num-seq rest)
@@ -97,34 +89,10 @@
   (prn x)
   x)
 
-(defn event->file-name
-  [local-base-dir
-   {:keys [^File file] :as event}]
-  (apply str local-base-dir "/" (.getName file)))
+(def backup-start-hour "2017-04-14T16")
 
-(defn write-new-format
-  [local-base-dir]
-  (fn [event]
-    (let [file (io/file (event->file-name local-base-dir event))]
-      (when-not (.exists file)
-        (.createNewFile file))
-      (with-open [out (io/output-stream file :append true)]
-        (if-not (:error event)
-          (transit/write (transit/writer out :json)
-                         (select-keys event
-                                      [:event
-                                       :sequence-num
-                                       :partition-key
-                                       :dependencies]))
-          (spit file (str event) :append true)))
-      (spit file "\n" :append true))))
-
-
-(def backup-start-hour "2017-04-18T16")
-
-;(def backups-old-format-end-hour "2017-10-04T09")
-
-(def backups-old-format-end-hour "2017-05-18T18")
+;(def backups-old-format-end-hour "2017-10-16T12")
+(def backups-old-format-end-hour "2017-10-18T12")
 
 (def staging-backup-s3-base "staging-witan-event-backup")
 (def prod-backup-s3-base "prod-witan-event-backup")
@@ -142,9 +110,10 @@
   []
   (transduce
    (comp (mapcat (hour->s3-object-summaries prod-backup-s3-base))
-         (map prn-t)
          (map (object-summary->local-file prod-backup-s3-base local-old-format-base-dir))
          file->events
+         (keep correct-group-created-events)
+         (map correct-file-size)
          event->event-plus-sequence-num
          (map reshape-event)
          (map (write-new-format local-new-format-base-dir)))
@@ -152,14 +121,15 @@
    (hour-sequence backup-start-hour
                   backups-old-format-end-hour)))
 
-(defn valid-event-line?
-  [^String encoded-str]
+(defn valid-event?
+  [event]
   (try
-    (transit/read
-     (transit/reader
-      (ByteArrayInputStream. (.getBytes encoded-str))
-      :json))
-    true
+    (->> (update event
+                 :event
+                 nippy/thaw)
+         :event
+         (#(or :kixi.comms.event/key %
+               :kixi.event/type %)))
     (catch Exception e
       false)))
 
@@ -167,13 +137,15 @@
   [^File file]
   {(keyword (.getName file))
    (reduce
-    (fn [report event-line]
-      (if (valid-event-line? event-line)
+    (fn [report event]
+      (if (valid-event? event)
         (update report :valid inc)
         (update report :error inc)))
     {:valid 0
      :error 0}
-    (line-seq (io/reader file)))})
+    (map
+     nippy/thaw
+     (baldr/baldr-seq (io/input-stream file))))})
 
 (defn report-errors
   ([] {})
@@ -184,8 +156,20 @@
 (defn validate-new-format-files
   []
   (transduce
-   (map file->error-report)
+   (comp (map file->error-report)
+         (filter (fn [report]
+                   (not (zero? (:error (first (vals report))))))))
    report-errors
    (rest
     (file-seq
      (io/file local-new-format-base-dir)))))
+
+(defn peak-files
+  []
+  (->> (io/file "/home/tom/Documents/clojure/kixi.event-fixer/event-log/new-format")
+       file-seq
+       (map io/input-stream)
+       (mapcat baldr/baldr-seq)
+       (map nippy/thaw)
+       (map #(update % :event nippy/thaw))
+       ))

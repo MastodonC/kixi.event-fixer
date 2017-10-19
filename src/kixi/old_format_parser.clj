@@ -1,6 +1,6 @@
 (ns kixi.old-format-parser
   (:require [gloss.io :as gloss.io]
-            [taoensso.nippy :as nippy]
+            [kixi.nippy :as nippy]
             [clojure.java.io :as io])
   (:import [java.nio ByteBuffer]
            [java.io InputStream]))
@@ -66,7 +66,7 @@
       ([acc]
        (let [complete-seq (vec (.toArray a))]
          (.clear a)
-         (->> complete-seq
+         (->> [(ffirst complete-seq) (map second complete-seq)]
               (xf acc)
               xf)))
       ([acc [file buffer]]
@@ -84,30 +84,39 @@
   [[file nippy-seq]]
   [file (gloss.io/contiguous (map rewind-buffer nippy-seq))])
 
+(defn drop-last-byte
+  [[file ^ByteBuffer buffer]]
+  (let [size (dec (.capacity buffer))]
+    [file (ByteBuffer/wrap (byte-array size (butlast (seq (.array buffer)))))]))
+
 (defn buffer->event
-  [[num file ^java.nio.ByteBuffer barray]]
+  [[num ^java.io.File file ^java.nio.ByteBuffer barray]]
   (try
-    {:event (nippy/thaw (.array barray))
-     :file file
-     :event-counter num}
+    (when-let [event (nippy/thaw (.array barray))]
+      {:event event
+       :event-str (String. (.array barray))
+       :file file
+       :event-counter num})
     (catch Exception e
       (try
+        (prn (.getName file) "-" e)
         {:event-str (String. (.array barray))
          :file file
          :error true
-         :event-counter num}
+         :event-counter num
+         :exception (str (.getClass e))}
         (catch Exception e
-          {
-           :file file
+          {:file file
            :error true
-           :event-counter num})))))
+           :event-counter num
+           :exception (str (.getClass e))})))))
 
 (defn event->event-plus-event-counter
   [xf]
   (let [sequence-num-seq (atom (range (Long/MAX_VALUE)))]
     (fn
       ([] (xf))
-      ([acc] acc)
+      ([acc] (xf acc))
       ([acc event]
        (let [num (first @sequence-num-seq)]
          (swap! sequence-num-seq rest)
@@ -120,5 +129,6 @@
    (map trim-to-data)
    partition-into-nippy-sequence
    (map combine-nippy-sequence)
+   (map drop-last-byte)
    event->event-plus-event-counter
-   (map buffer->event)))
+   (keep buffer->event)))

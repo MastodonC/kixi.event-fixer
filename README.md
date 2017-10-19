@@ -1,14 +1,9 @@
 # kixi.event-fixer
 
-A utilty library to transfer our event log from the nippy encoder to transit json
+A utilty library to transfer our event log from the broken nippy files to baldr wrapped nippy files
 
 ## Usage
 
-FIXME
+This is a repl driven tool, that only had a one time use, hence it being a bit messy. The event_fixer namespace is the main entry point, with the download-s3-backups-and-transform function that runs the whole fix. The other fns in there are either helpers for that process or checkers for the files. The other namespaces just do what they say on the tin.
 
-## License
-
-Copyright © 2017 FIXME
-
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+The customised Nippy version contained within shouldn't be used for anything else, it has been modified to correct the specific problems we had with our Events.

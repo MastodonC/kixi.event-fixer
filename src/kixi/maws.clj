@@ -31,3 +31,8 @@
   []
   (-> (federated-config)
       (get-credentials :witan-prod "ro")))
+
+(defn witan-admin-prod-creds
+  [mfa]
+  (-> (federated-config)
+      (get-credentials :witan-prod "admin" mfa)))
