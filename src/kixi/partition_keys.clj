@@ -12,11 +12,16 @@
                                                                    :kixi.datastore.metadatastore/id]))
    [:kixi.datastore.filestore/upload-link-created "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.filestore/id])
    [:kixi.heimdall/user-logged-in "1.0.0"] uuid
-   [:kixi.datastore.file/created "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.metadatastore/id])
-   [:kixi.datastore.metadatastore/update-rejected "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.metadatastore/id])
-   [:kixi.datastore.filestore/download-link-created "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.metadatastore/id])
-   [:kixi.datastore.metadatastore/sharing-change-rejected "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.metadatastore/id])
-   [:kixi.datastore.file-metadata/rejected "1.0.0"] #(get-in % [:kixi.comms.event/payload
+ [:kixi.datastore.file/created "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.metadatastore/id])
+ [:kixi.datastore.metadatastore/update-rejected "1.0.0"] #(or (get-in % [:kixi.comms.event/payload :kixi.datastore.metadatastore/id])
+                                                                (get-in % [:kixi.comms.event/payload
+                                                                           :original
+                                                                           :kixi.datastore.metadatastore/payload
+                                                                           :kixi.comms.command/payload
+                                                                           :kixi.datastore.metadatastore/id]))
+ [:kixi.datastore.filestore/download-link-created "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.metadatastore/id])
+ [:kixi.datastore.metadatastore/sharing-change-rejected "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.metadatastore/id])
+ [:kixi.datastore.file-metadata/rejected "1.0.0"] #(get-in % [:kixi.comms.event/payload
                                                                 :kixi.datastore.metadatastore/file-metadata
                                                                 :kixi.datastore.metadatastore/id])
    [:kixi.datastore.filestore/download-link-rejected "1.0.0"] #(get-in % [:kixi.comms.event/payload :kixi.datastore.metadatastore/id])
@@ -38,6 +43,7 @@
    [:kixi.heimdall/group-created "2.0.0"]  #(get-in % [:kixi.comms.event/payload :group-id])
    [:kixi.heimdall/create-group-failed "2.0.0"]  #(or (get-in % [:kixi.comms.event/payload :group-id])
                                                       (get-in % [:kixi.comms.event/payload :user-id]))
+
    })
 
 (def event->event-type-version

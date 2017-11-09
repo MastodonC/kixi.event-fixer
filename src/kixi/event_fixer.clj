@@ -5,6 +5,7 @@
             [clj-time.core :as t]
             [clojure.java.io :as io]
             [clojure.string :as string]
+            [kixi.event-filter :refer [unwanted-event?]]
             [kixi.group-event-fixer :refer [correct-group-created-events]]
             [kixi.hour-sequence :refer [hour-sequence]]
             [kixi.maws :refer [witan-prod-creds]]
@@ -68,8 +69,12 @@
 (defn reshape-event
   [event]
   (if-not (:error event)
-    (assoc event
-           :partition-key (event->partition-key event))
+    (if-let [pkey (event->partition-key event)]
+      (if-not (empty? pkey)
+        (assoc event
+               :partition-key pkey)
+        (throw (ex-info "EMPTY Pkey" event)))
+      (throw (ex-info "No Pkey" event)))
     event))
 
 (defn event->event-plus-sequence-num
@@ -114,12 +119,29 @@
          file->events
          (keep correct-group-created-events)
          (map correct-file-size)
+         (remove unwanted-event?)
          event->event-plus-sequence-num
          (map reshape-event)
          (map (write-new-format local-new-format-base-dir)))
    counter
    (hour-sequence backup-start-hour
                   backups-old-format-end-hour)))
+
+
+
+(def complete-new-format-log-dir "./event-log/complete-new-log")
+(def prod-new-format-s3-base "prod-witan-event-log")
+
+(defn download-complete-new-log
+  []
+  (transduce
+   (comp (mapcat (hour->s3-object-summaries prod-new-format-s3-base))
+         (map (object-summary->local-file prod-new-format-s3-base
+                                          complete-new-format-log-dir)))
+   counter
+   (hour-sequence "2017-11-03T10"
+                  "2017-11-03T23")))
+
 
 (defn valid-event?
   [event]

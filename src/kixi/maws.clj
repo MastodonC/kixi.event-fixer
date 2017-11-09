@@ -32,6 +32,11 @@
   (-> (federated-config)
       (get-credentials :witan-prod "ro")))
 
+(defn witan-staging-creds
+  []
+  (-> (federated-config)
+      (get-credentials :mastodonc "ro")))
+
 (defn witan-admin-prod-creds
   [mfa]
   (-> (federated-config)

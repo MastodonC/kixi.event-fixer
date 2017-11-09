@@ -82,12 +82,14 @@
          (:kixi.comms.event/key event))
     (assoc-in event
               [:kixi.comms.event/payload :kixi.datastore.metadatastore/size-bytes]
-              (file-id->size
-               ((comp :kixi.comms.event/payload :kixi.datastore.metadatastore/id) event)))
+              (get file-id->size
+                   (get-in event [:kixi.comms.event/payload :kixi.datastore.metadatastore/id])
+                   :error))
     (assoc-in event
               [:kixi.comms.event/payload :kixi.datastore.metadatastore/file-metadata :kixi.datastore.metadatastore/size-bytes]
-              (file-id->size
-               ((comp :kixi.comms.event/payload :kixi.datastore.metadatastore/file-metadata :kixi.datastore.metadatastore/id) event)))))
+              (get file-id->size
+                   (get-in event [:kixi.comms.event/payload :kixi.datastore.metadatastore/file-metadata :kixi.datastore.metadatastore/id])
+                   :error))))
 
 (defn correct-file-size
   [event]
