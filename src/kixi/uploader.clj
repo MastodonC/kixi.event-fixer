@@ -5,12 +5,10 @@
             [clojure.string :as string])
   (:import [java.io ByteArrayInputStream File InputStream]))
 
-  (def mfa "673802")
-
-(def credentials (assoc (witan-admin-prod-creds mfa)
-                        :client-config {:max-connections 50
-                                        :connection-timeout 5000
-                                        :socket-timeout 5000}))
+(def credentials (delay (assoc (witan-admin-prod-creds "673802")
+                               :client-config {:max-connections 50
+                                               :connection-timeout 5000
+                                               :socket-timeout 5000})))
 
 (def local-new-format-base-dir "./event-log/new-format")
 
@@ -33,7 +31,7 @@
   [[prefix ^File file]]
   (try
     (s3/put-object
-     credentials
+     @credentials
      :bucket-name target-bucket
      :key (str prefix "/" (.getName file))
      :file file)
