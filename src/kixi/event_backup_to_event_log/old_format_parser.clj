@@ -1,10 +1,9 @@
-(ns kixi.old-format-parser
-  (:require [gloss.io :as gloss.io]
-            [kixi.nippy :as nippy]
-            [clojure.java.io :as io])
-  (:import [java.nio ByteBuffer]
-           [java.io InputStream]))
-
+(ns kixi.event-backup-to-event-log.old-format-parser
+  (:require [clojure.java.io :as io]
+            [gloss.io :as gloss.io]
+            [kixi.event-backup-to-event-log.nippy :as nippy])
+  (:import java.io.InputStream
+           java.nio.ByteBuffer))
 
 (def line-break 10)
 

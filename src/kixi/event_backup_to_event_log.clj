@@ -1,19 +1,26 @@
-(ns kixi.event-fixer
+(ns kixi.event-backup-to-event-log
   (:gen-class)
   (:require [amazonica.aws.s3 :as s3]
             [baldr.core :as baldr]
             [clj-time.core :as t]
             [clojure.java.io :as io]
             [clojure.string :as string]
-            [kixi.group-event-fixer :refer [correct-group-created-events]]
+            [kixi.event-backup-to-event-log.file-size :refer [correct-file-size]]
+            [kixi.event-backup-to-event-log.group-event-fixer
+             :refer
+             [correct-group-created-events]]
+            [kixi.event-backup-to-event-log.old-format-parser :refer [file->events]]
+            [kixi.event-backup-to-event-log.partition-keys
+             :refer
+             [event->partition-key]]
+            [kixi.event-filter :refer [unwanted-event?]]
             [kixi.hour-sequence :refer [hour-sequence]]
             [kixi.maws :refer [witan-prod-creds]]
             [kixi.new-file-writer :refer [write-new-format]]
-            [kixi.old-format-parser :refer [file->events]]
-            [kixi.partition-keys :refer [event->partition-key]]
-            [kixi.file-size :refer [correct-file-size]]
             [taoensso.nippy :as nippy])
   (:import [java.io ByteArrayInputStream File InputStream]))
+
+(comment "Contains the repl trigger function for transforming the event log from 'prod-witan-event-backup' into the log in 'prod-witan-event-log'.")
 
 ;; Run Ctrl-c Ctrl-k on the buffer to generate new credentials
 (def credentials (assoc (witan-prod-creds) :client-config {:max-connections 50
@@ -68,8 +75,12 @@
 (defn reshape-event
   [event]
   (if-not (:error event)
-    (assoc event
-           :partition-key (event->partition-key event))
+    (if-let [pkey (event->partition-key event)]
+      (if-not (empty? pkey)
+        (assoc event
+               :partition-key pkey)
+        (throw (ex-info "EMPTY Pkey" event)))
+      (throw (ex-info "No Pkey" event)))
     event))
 
 (defn event->event-plus-sequence-num
@@ -114,6 +125,7 @@
          file->events
          (keep correct-group-created-events)
          (map correct-file-size)
+         (remove unwanted-event?)
          event->event-plus-sequence-num
          (map reshape-event)
          (map (write-new-format local-new-format-base-dir)))
@@ -121,55 +133,15 @@
    (hour-sequence backup-start-hour
                   backups-old-format-end-hour)))
 
-(defn valid-event?
-  [event]
-  (try
-    (->> (update event
-                 :event
-                 nippy/thaw)
-         :event
-         (#(or :kixi.comms.event/key %
-               :kixi.event/type %)))
-    (catch Exception e
-      false)))
+(def prod-new-format-s3-base "prod-witan-event-log")
+(def complete-new-format-log-dir "./event-log/complete-new-log")
 
-(defn file->error-report
-  [^File file]
-  {(keyword (.getName file))
-   (reduce
-    (fn [report event]
-      (if (valid-event? event)
-        (update report :valid inc)
-        (update report :error inc)))
-    {:valid 0
-     :error 0}
-    (map
-     nippy/thaw
-     (baldr/baldr-seq (io/input-stream file))))})
-
-(defn report-errors
-  ([] {})
-  ([acc] acc)
-  ([acc x]
-   (merge acc x)))
-
-(defn validate-new-format-files
+(defn download-complete-new-log
   []
   (transduce
-   (comp (map file->error-report)
-         (filter (fn [report]
-                   (not (zero? (:error (first (vals report))))))))
-   report-errors
-   (rest
-    (file-seq
-     (io/file local-new-format-base-dir)))))
-
-(defn peak-files
-  []
-  (->> (io/file "/home/tom/Documents/clojure/kixi.event-fixer/event-log/new-format")
-       file-seq
-       (map io/input-stream)
-       (mapcat baldr/baldr-seq)
-       (map nippy/thaw)
-       (map #(update % :event nippy/thaw))
-       ))
+   (comp (mapcat (hour->s3-object-summaries prod-new-format-s3-base))
+         (map (object-summary->local-file prod-new-format-s3-base
+                                          complete-new-format-log-dir)))
+   counter
+   (hour-sequence "2017-11-03T10"
+                  "2017-11-03T23")))

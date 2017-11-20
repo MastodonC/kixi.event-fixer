@@ -1,27 +1,16 @@
-(ns kixi.nippy
+(ns kixi.event-backup-to-event-log.nippy
   "High-performance serialization library for Clojure"
   {:author "Peter Taoussanis (@ptaoussanis)"}
-  (:require
-   [clojure.java.io :as jio]
-   [taoensso.encore :as enc :refer [cond*]]
-   [kixi.nippy
-    [utils       :as utils]
-    [compression :as compression]
-    [encryption :as encryption]])
-
-  (:import
-   [java.io ByteArrayInputStream ByteArrayOutputStream DataInputStream
-    DataOutputStream Serializable ObjectOutputStream ObjectInputStream
-    DataOutput DataInput]
-   [java.lang.reflect Method]
-   ;; [java.net URI] ; TODO
-   [java.util Date UUID]
-   [java.util.regex Pattern]
-   [clojure.lang Keyword Symbol BigInt Ratio
-    APersistentMap APersistentVector APersistentSet
-    IPersistentMap ; IPersistentVector IPersistentSet IPersistentList
-    PersistentQueue PersistentTreeMap PersistentTreeSet PersistentList
-    LazySeq IRecord ISeq]))
+  (:require [clojure.java.io :as jio]
+            [kixi.event-backup-to-event-log.nippy.compression :as compression]
+            [kixi.event-backup-to-event-log.nippy.encryption :as encryption]
+            [kixi.event-backup-to-event-log.nippy.utils :as utils]
+            [taoensso.encore :as enc :refer [cond*]])
+  (:import [clojure.lang APersistentMap APersistentSet APersistentVector BigInt IPersistentMap IRecord ISeq Keyword LazySeq PersistentList PersistentQueue PersistentTreeMap PersistentTreeSet Ratio Symbol]
+           [java.io ByteArrayInputStream ByteArrayOutputStream DataInput DataInputStream DataOutput DataOutputStream ObjectInputStream ObjectOutputStream Serializable]
+           java.lang.reflect.Method
+           [java.util Date UUID]
+           java.util.regex.Pattern))
 
 (if (vector? enc/encore-version)
   (enc/assert-min-encore-version [2 67 1])

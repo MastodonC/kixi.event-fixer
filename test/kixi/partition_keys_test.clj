@@ -1,10 +1,11 @@
 (ns kixi.partition-keys-test
-  (:require [kixi.partition-keys :as pk]
-            [kixi.event-fixer :refer [hour->s3-object-summaries
-                                      object-summary->local-file]]
-            [kixi.old-format-parser :refer [file->events]]
-            [kixi.hour-sequence :refer [hour-sequence]]
-            [clojure.test :as t]))
+  (:require [clojure.test :as t]
+            [kixi.event-backup-to-event-log.old-format-parser :refer [file->events]]
+            [kixi.event-backup-to-event-log.partition-keys :as pk]
+            [kixi.event-fixer
+             :refer
+             [hour->s3-object-summaries object-summary->local-file]]
+            [kixi.hour-sequence :refer [hour-sequence]]))
 
 (def backup-start-hour "2017-06-28T12")
 

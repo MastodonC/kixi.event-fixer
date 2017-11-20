@@ -1,10 +1,9 @@
 (ns kixi.event-fixer-test
-  (:require [clojure.test :refer :all]
-            [kixi.event-fixer :refer :all]
-            [kixi.old-format-parser :refer [file->events]]
-            [kixi.file-size :refer [correct-file-size]]
-            [clojure.java.io :as io]))
-
+  (:require [clojure.java.io :as io]
+            [clojure.test :refer :all]
+            [kixi.event-backup-to-event-log.file-size :refer [correct-file-size]]
+            [kixi.event-backup-to-event-log.old-format-parser :refer [file->events]]
+            [kixi.event-fixer :refer :all]))
 
 (deftest prod-witan-event-1-2017-06-30-11-30-20-8fa8c413-ccf6-4c78-a7d4-d214ca33aa89
   (let [file (io/file "./event-log/old-format/prod-witan-event-1-2017-06-30-11-30-20-8fa8c413-ccf6-4c78-a7d4-d214ca33aa89")]
@@ -120,9 +119,28 @@
     (is (= 4
            (count file-created-events)))
     (is (empty?
-         (filter #{:FIX-BYTE-COUNT}
+         (remove number?
                  (map #(or (:kixi.datastore.metadatastore/size-bytes %)
                            ((comp :kixi.datastore.metadatastore/size-bytes :kixi.datastore.metadatastore/file-metadata) %))
+                      (map (comp :kixi.comms.event/payload :event)
+                           file-created-events)))))))
+
+(deftest file-size-byte-count-fixed-2
+  (let [file (io/file "./event-log/old-format/prod-witan-event-1-2017-07-20-10-27-33-5f20672e-d295-428f-8d4d-f12935d0bd0e")
+        file-created-events (into []
+                                  (comp file->events
+                                        (filter #(or (= :kixi.datastore.file/created
+                                                        (get-in % [:event :kixi.comms.event/key]))
+                                                     (= :kixi.datastore.communication-specs/file-metadata-created
+                                                        (get-in % [:event :kixi.comms.event/payload :kixi.datastore.communication-specs/file-metadata-update-type]))))
+                                        (map correct-file-size))
+                                  [file])]
+    (is (= 2
+           (count file-created-events)))
+    (is (empty?
+         (remove number?
+                 (map #(or (:kixi.datastore.metadatastore/size-bytes %)
+                            ((comp :kixi.datastore.metadatastore/size-bytes :kixi.datastore.metadatastore/file-metadata) %))
                       (map (comp :kixi.comms.event/payload :event)
                            file-created-events)))))))
 

@@ -1,4 +1,4 @@
-(ns kixi.nippy.utils
+(ns kixi.event-backup-to-event-log.nippy.utils
   (:require [clojure.string  :as str]
             [taoensso.encore :as enc])
   (:import  [java.io ByteArrayInputStream ByteArrayOutputStream Serializable

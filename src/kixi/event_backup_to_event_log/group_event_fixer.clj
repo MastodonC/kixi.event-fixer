@@ -1,4 +1,4 @@
-(ns kixi.group-event-fixer)
+(ns kixi.event-backup-to-event-log.group-event-fixer)
 
 
 (defn transform-old-group-event

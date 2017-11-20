@@ -1,4 +1,4 @@
-(ns kixi.nippy.compression
+(ns kixi.event-backup-to-event-log.nippy.compression
   (:require [taoensso.encore :as enc])
   (:import  [java.io ByteArrayInputStream ByteArrayOutputStream DataInputStream
              DataOutputStream]))
