@@ -1,6 +1,6 @@
 (ns kixi.group-event-fixer-test
-  (:require [kixi.group-event-fixer :as sut]
-            [clojure.test :refer :all]))
+  (:require [clojure.test :refer :all]
+            [kixi.event-backup-to-event-log.group-event-fixer :as sut]))
 
 (def user-event {:kixi.comms.message/type "event",
                  :kixi.comms.event/id "23a4b7cf-11a7-46b6-9c51-a5a7cacd4d74",

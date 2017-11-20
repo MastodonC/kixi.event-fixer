@@ -1,21 +1,24 @@
-(ns kixi.manual-history-generation
+(ns kixi.manual-history.manual-history-generation
   "Untility fns for transforming json files into new format event log files."
   (:require [amazonica.aws.s3 :as s3]
             [baldr.core :as baldr]
-            [clj-time.core :as t]
-            [clojure.java.io :as io]
-            [clojure.data :refer [diff]]
             [cheshire.core :as json]
+            [clj-time.core :as t]
+            [clojure.data :refer [diff]]
+            [clojure.java.io :as io]
             [clojure.string :as string]
-            [kixi.group-event-fixer :refer [correct-group-created-events]]
+            [kixi.event-backup-to-event-log.file-size :refer [correct-file-size]]
+            [kixi.event-backup-to-event-log.group-event-fixer
+             :refer
+             [correct-group-created-events]]
+            [kixi.event-backup-to-event-log.old-format-parser :refer [file->events]]
+            [kixi.event-backup-to-event-log.partition-keys
+             :refer
+             [event->partition-key]]
             [kixi.hour-sequence :refer [hour-sequence]]
             [kixi.maws :refer [witan-prod-creds witan-staging-creds]]
             [kixi.new-file-writer :refer [write-new-format]]
-            [kixi.old-format-parser :refer [file->events]]
-            [kixi.partition-keys :refer [event->partition-key]]
-            [kixi.file-size :refer [correct-file-size]]
             [taoensso.nippy :as nippy]))
-
 
 (defn prep-events
   [events]

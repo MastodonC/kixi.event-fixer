@@ -1,4 +1,4 @@
-(ns kixi.nippy.encryption
+(ns kixi.event-backup-to-event-log.nippy.encryption
   "Simple no-nonsense crypto with reasonable defaults"
   (:require [taoensso.encore :as enc]))
 

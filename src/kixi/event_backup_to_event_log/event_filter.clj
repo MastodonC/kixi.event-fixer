@@ -1,4 +1,4 @@
-(ns kixi.event-filter)
+(ns kixi.event-backup-to-event-log.event-filter)
 
 
 

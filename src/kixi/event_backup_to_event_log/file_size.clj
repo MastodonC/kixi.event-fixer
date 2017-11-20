@@ -1,4 +1,4 @@
-(ns kixi.file-size
+(ns kixi.event-backup-to-event-log.file-size
   (:require [amazonica.aws.s3 :as s3]
             [kixi.maws :refer [witan-prod-creds]]
             [clojure.java.io :as io]
