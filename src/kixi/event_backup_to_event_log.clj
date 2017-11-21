@@ -55,7 +55,7 @@
 
 (def backup-start-hour "2017-04-14T16")
 
-;(def backups-old-format-end-hour "2017-10-16T12")
+                                        ;(def backups-old-format-end-hour "2017-10-16T12")
 (def backups-old-format-end-hour "2017-10-18T12")
 
 (def staging-backup-s3-base "staging-witan-event-backup")

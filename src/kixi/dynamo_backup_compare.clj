@@ -55,7 +55,7 @@
 (def backup-one {:local-dir (str local-base-dir "prod")
                  :bucket "prod.witan-dynamo-backup"
                  :region "eu-west-1"
-                 :prefix "kixi.datastore/2017-11-08-04-26-51"
+                 :prefix "kixi.datastore/2017-11-20-04-27-27"
                  :credentials (assoc (witan-prod-creds)
                                      :endpoint "eu-west-1")})
 
@@ -63,7 +63,7 @@
 (def backup-two {:local-dir (str local-base-dir "replay")
                  :bucket "staging.witan-dynamo-backup"
                  :region "eu-central-1"
-                 :prefix "kixi.datastore/2017-11-08-17-22-21"
+                 :prefix "kixi.datastore/2017-11-20-17-16-58"
                  :credentials (assoc (witan-staging-creds)
                                      :endpoint "eu-central-1")})
 

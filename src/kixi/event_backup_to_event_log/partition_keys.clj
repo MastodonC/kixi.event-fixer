@@ -38,6 +38,7 @@
                                                       (get-in % [:kixi.comms.event/payload :group-id]))
    [:kixi.heimdall/password-reset-request-created "1.0.0"] #(get-in % [:kixi.comms.event/payload :user :id])
    [:kixi.heimdall/invite-failed "1.0.0"] uuid
+   [:kixi.heimdall/invite-created "2.0.0"] #(get-in % [:kixi.comms.event/payload :user :id])
    [:kixi.heimdall/password-reset-completed "1.0.0"] uuid
    [:kixi.heimdall/password-reset-request-rejected "1.0.0"] uuid
    [:kixi.heimdall/user-created "2.0.0"]  #(get-in % [:kixi.comms.event/payload :id])
