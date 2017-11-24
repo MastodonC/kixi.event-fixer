@@ -224,6 +224,7 @@
                           (diff (get prod-metadatastore id)
                                 (get replay-metadatastore id)))
                         (remove seven-forgettable-files
-                                all-ids))))
+                                (clojure.set/union (set (keys replay-metadatastore))
+                                                   (set (keys prod-metadatastore)))))))
 
                                         ;(clojure.pprint/pprint remarkable-diffs)
