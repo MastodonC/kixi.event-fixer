@@ -52,20 +52,36 @@
 
 (def local-base-dir "./dynamo-backups/")
 
-(def backup-one {:local-dir (str local-base-dir "prod")
-                 :bucket "prod.witan-dynamo-backup"
-                 :region "eu-west-1"
-                 :prefix "kixi.datastore/2017-11-20-04-27-27"
-                 :credentials (assoc (witan-prod-creds)
-                                     :endpoint "eu-west-1")})
+(def replay-base-dir (str local-base-dir "replay"))
+(def prod-base-dir (str local-base-dir "prod"))
 
+(def prod-s3
+  {:local-dir prod-base-dir
+   :region "eu-west-1"
+   :credentials (assoc (witan-prod-creds)
+                       :endpoint "eu-west-1")})
 
-(def backup-two {:local-dir (str local-base-dir "replay")
-                 :bucket "staging.witan-dynamo-backup"
-                 :region "eu-central-1"
-                 :prefix "kixi.datastore/2017-11-20-17-16-58"
-                 :credentials (assoc (witan-staging-creds)
-                                     :endpoint "eu-central-1")})
+(def replay-s3
+  {:local-dir replay-base-dir
+   :region "eu-central-1"
+   :credentials (assoc (witan-staging-creds)
+                       :endpoint "eu-central-1")})
+
+(def datastore-prod-backup (merge prod-s3
+                                  {:bucket "prod.witan-dynamo-backup"
+                                   :prefix "kixi.datastore/2017-11-20-04-27-27"}))
+
+(def datastore-replay-backup (merge replay-s3
+                                    {:bucket "staging.witan-dynamo-backup"
+                                     :prefix "kixi.datastore/2017-11-20-17-16-58"}))
+
+(def heimdall-prod-backup (merge prod-s3
+                                 {:bucket "prod.witan-dynamo-backup"
+                                  :prefix "kixi.heimdall/2017-11-20-04-26-20"}))
+
+(def heimdall-replay-backup (merge replay-s3
+                                   {:bucket "staging.witan-dynamo-backup"
+                                    :prefix "kixi.heimdall/2017-11-24-15-15-59"}))
 
 
 (defn download-backup
@@ -79,7 +95,7 @@
     (object-summary->local-file credentials local-dir bucket obj)))
 
 (defn file->id-entities
-  [file-name]
+  [file-name id-field]
   (let [entities (->> file-name
                       io/reader
                       json/parse-stream
@@ -90,16 +106,24 @@
                                     (map (comp second first) (vals %)))))]
     (reduce
      #(assoc %1
-             (%2 "kixi.datastore.metadatastore_id")
+             (%2 id-field)
              %2)
      {}
      entities)))
 
+(defn datastore-file->id-entries
+  [file]
+  (file->id-entities file "kixi.datastore.metadatastore_id"))
+
+(defn heimdall-user-file->id-entries
+  [file]
+  (file->id-entities file "id"))
+
 (defn load-backup-into-mem
-  [base-dir prefix]
+  [base-dir prefix file->entities]
   (transduce
    (comp (filter #(.startsWith (.getName %) prefix))
-         (map file->id-entities))
+         (map file->entities))
    merge
    (->> base-dir
         io/file
@@ -107,8 +131,32 @@
         rest)))
 
 
-(def replay-metadatastore (load-backup-into-mem "./dynamo-backups/replay" "staging-replay-kixi.datastore-metadatastore-"))
-(def prod-metadatastore (load-backup-into-mem "./dynamo-backups/prod" "prod-kixi.datastore-metadatastore-"))
+(def replay-metadatastore (load-backup-into-mem
+                           replay-base-dir
+                           "staging-replay-kixi.datastore-metadatastore-"
+                           datastore-file->id-entries))
+(def prod-metadatastore (load-backup-into-mem
+                         prod-base-dir
+                         "prod-kixi.datastore-metadatastore-"
+                         datastore-file->id-entries))
+
+(def replay-heimdall-user (load-backup-into-mem
+                           replay-base-dir
+                           "staging-replay-kixi.heimdall-user"
+                           heimdall-user-file->id-entries))
+(def prod-heimdall-user (load-backup-into-mem
+                         prod-base-dir
+                         "prod-kixi.heimdall-user"
+                         heimdall-user-file->id-entries))
+
+(def replay-heimdall-group (load-backup-into-mem
+                            replay-base-dir
+                            "staging-replay-kixi.heimdall-group"
+                            heimdall-user-file->id-entries))
+(def prod-heimdall-group (load-backup-into-mem
+                          prod-base-dir
+                          "prod-kixi.heimdall-group"
+                          heimdall-user-file->id-entries))
 
 
 (def replay-not-prod (remove (set (keys prod-metadatastore)) (keys replay-metadatastore)))
@@ -134,19 +182,29 @@
             (get-in % ["kixi.datastore.metadatastore_name"]))
         (vals prod-metadatastore))
 
-(def all-ids (clojure.set/union (set (keys replay-metadatastore))
-                                (set (keys prod-metadatastore))))
+(defn diff-backups
+  [prod-set replay-set]
+  (remove
+   (fn [[a b c]]
+     (and (nil? a)
+          (nil? b)))
+   (map
+    (fn [id]
+      (diff (get prod-set id)
+            (get replay-set id)))
+    (clojure.set/union (set (keys replay-set))
+                       (set (keys prod-set))))))
 
+(def datastore-metadata-diff
+  (diff-backups prod-metadatastore
+                replay-metadatastore))
 
-(def diffs (remove
-            (fn [[a b c]]
-              (and (nil? a)
-                   (nil? b)))
-            (map
-             (fn [id]
-               (diff (get prod-metadatastore id)
-                     (get replay-metadatastore id)))
-             all-ids)))
+(def heimdall-user-diff
+  (diff-backups prod-heimdall-user
+                replay-heimdall-user))
+(def heimdall-group-diff
+  (diff-backups prod-heimdall-group
+                replay-heimdall-group))
 
 (def seven-forgettable-files #{"bdd8b92e-c6df-4498-9ca4-a5778693f972"
                                "aa277eff-b130-4993-8ec9-d43a9fdb25c6"
@@ -168,52 +226,4 @@
                         (remove seven-forgettable-files
                                 all-ids))))
 
-(clojure.pprint/pprint remarkable-diffs)
-;; => nil
-
-
-;;remarkable four investigations
-
-(def remarkable-one "1d13be67-bb52-44c2-bc67-a7b26e670924")
-;; => #'kixi.dynamo-backup-compare/remarkable-one
-
-(get-in replay-metadatastore [remarkable-one "kixi.datastore.metadatastore_sharing|kixi.datastore.metadatastore_meta-read"])
-;; => ["567ace3f-d531-4af2-ab5d-d8fe7f4e3079" "7d99af7c-691b-41a5-a1cb-8682a8a5eb1a"]
-
-(get-in prod-metadatastore [remarkable-one "kixi.datastore.metadatastore_sharing|kixi.datastore.metadatastore_meta-read"])
-;; => ["567ace3f-d531-4af2-ab5d-d8fe7f4e3079"]
-
-;; An extra meta-read share in replay, but not in prod. Event processing failure?
-
-
-(def remarkable-two "f73e8fe0-079d-4d3f-8670-779cf53d4c00")
-
-(get-in replay-metadatastore [remarkable-two "kixi.datastore.metadatastore_logo"])
-;; => nil
-
-(get-in prod-metadatastore [remarkable-two "kixi.datastore.metadatastore_logo"])
-;; => "https://data.london.gov.uk/wp-content/themes/theme_london/img/icon-publisher/gla.png"
-
-;; Prod has a logo set. Replay incapable of processing an event prod has processed?
-
-
-(def remarkable-three "7dbe7d1d-f893-49e5-868c-9962200c1506")
-
-(get-in replay-metadatastore [remarkable-three "kixi.datastore.metadatastore_logo"])
-;; => nil
-
-(get-in prod-metadatastore [remarkable-three "kixi.datastore.metadatastore_logo"])
-;; => "https://data.london.gov.uk/wp-content/themes/theme_london/img/icon-publisher/gla.png"
-
-;; Same problem. Prod has logo.
-
-
-  (def remarkable-four "891cd066-ddeb-43f7-bbe3-d854c663c4ad")
-
-(get-in replay-metadatastore [remarkable-four])
-;; => {"kixi.datastore.metadatastore_file-type" "xlsx", "kixi.datastore.metadatastore_provenance|kixi.datastore.metadatastore_source" "upload", "kixi.datastore.metadatastore_provenance|kixi.user_id" "65661685-6757-45cf-8048-1ad6ecb6f8bb", "kixi.datastore.metadatastore_id" "891cd066-ddeb-43f7-bbe3-d854c663c4ad", "kixi.datastore.metadatastore_header" true, "kixi.datastore.metadatastore_size-bytes" "error", "kixi.datastore.metadatastore_provenance|kixi.datastore.metadatastore_created" "20170614T111153.598Z", "kixi.datastore.metadatastore_name" "The output from Step 1 of the Data Combiner", "kixi.datastore.metadatastore_sharing|kixi.datastore.metadatastore_meta-read" ["c3101619-dee9-469a-abe2-2030bc3acaec" "d6650967-61e3-4145-bc0b-add0198ae4da"], "kixi.datastore.metadatastore_type" "stored", "kixi.datastore.metadatastore_description" "This is the excel file that is the output from the Data Combiner script found in Mastodon C's GitHub repository https://github.com/mastodonc/esc "}
-
-(get-in prod-metadatastore [remarkable-four])
-;; => nil
-
-;; File exists in replay, but not in prod. Prod failed to process a create event?
+                                        ;(clojure.pprint/pprint remarkable-diffs)
