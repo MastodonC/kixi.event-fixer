@@ -9,5 +9,4 @@ pom.xml.asc
 /.nrepl-port
 .hgignore
 .hg/
-event-log/old-format/*
-event-log/new-format/*
+event-log/*
