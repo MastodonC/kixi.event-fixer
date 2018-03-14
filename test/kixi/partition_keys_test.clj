@@ -2,7 +2,7 @@
   (:require [clojure.test :as t]
             [kixi.event-backup-to-event-log.old-format-parser :refer [file->events]]
             [kixi.event-backup-to-event-log.partition-keys :as pk]
-            [kixi.event-fixer
+            [kixi.hour->s3-object-summaries
              :refer
              [hour->s3-object-summaries object-summary->local-file]]
             [kixi.hour-sequence :refer [hour-sequence]]))

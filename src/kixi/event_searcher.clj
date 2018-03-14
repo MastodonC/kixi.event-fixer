@@ -1,7 +1,7 @@
 (ns kixi.event-searcher
-  (:require [clojure.java.io :as io]
-            [baldr.core :as baldr]
-            [taoensso.nippy :as nippy]))
+  (:require   [clojure.java.io :as io]
+              [baldr.core :as baldr]
+              [taoensso.nippy :as nippy]))
 
 
 

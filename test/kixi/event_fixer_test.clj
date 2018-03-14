@@ -3,7 +3,7 @@
             [clojure.test :refer :all]
             [kixi.event-backup-to-event-log.file-size :refer [correct-file-size]]
             [kixi.event-backup-to-event-log.old-format-parser :refer [file->events]]
-            [kixi.event-fixer :refer :all]))
+            [kixi.event-backup-to-event-log :refer :all]))
 
 (deftest prod-witan-event-1-2017-06-30-11-30-20-8fa8c413-ccf6-4c78-a7d4-d214ca33aa89
   (let [file (io/file "./event-log/old-format/prod-witan-event-1-2017-06-30-11-30-20-8fa8c413-ccf6-4c78-a7d4-d214ca33aa89")]
