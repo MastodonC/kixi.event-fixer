@@ -9,4 +9,4 @@
                  [clj-time "0.14.0"]
                  [cheshire "5.7.0"]
                  [gloss "0.2.6"]
-                 [org.clojure/clojure "1.9.0-beta1"]])
+                 [org.clojure/clojure "1.9.0"]])
