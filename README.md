@@ -21,8 +21,9 @@ git pull
 emacs resources/prod.edn
 ```
 
-* Adjust `:s3-bucket-control-args -> :bucket-names` to include the **old** bucket name.
+* Adjust `:s3-bucket-control-args -> :bucket-names` to include the **old** bucket name. (Found in `:common -> :event-bucket`)
 * Adjust `:s3-bucket-control-args -> :policies` to include a new policy for the **old** bucket name.
+* Adjust `:dcos-cluster-infra-args -> :slave-policies -> :name "dcos-slave-s3-readonly-access" -> :resources` to include the **old** bucket name.
 * Adjust `:common -> :event-bucket` to be the **new** bucket name.
 
 ``` shell
@@ -30,11 +31,11 @@ mach plan
 ```
 
 **There should be NO DELETIONS (red text) listed in the plan output. If you see red text, DO NOT CONTINUE.**
-You should see 4 updates (yellow text) and 2 creates (green text).
+You should see 5 updates (yellow text) and 2 creates (green text).
 
 Create a new branch with your changes, open a PR and have some one review. Include the changes from terraform plan output in the PR description. ([Example](https://github.com/MastodonC/terraboot-witan/pull/155))
 
-Once approved, checkout master.
+Once approved, merge and checkout master.
 
 ``` shell
 mach plan
