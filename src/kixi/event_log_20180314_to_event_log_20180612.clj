@@ -1,4 +1,4 @@
-(ns kixi.event-log-20180314-to-event-log-20180416
+(ns kixi.event-log-20180314-to-event-log-20180612
   (:require [clojure.java.io :as io]
             [baldr.core :as baldr]
             [taoensso.nippy :as nippy]
@@ -6,10 +6,6 @@
             [kixi.hour->s3-object-summaries :refer :all]
             [kixi.event-backup-to-event-log.partition-keys :refer [event->partition-key]]
             [kixi.new-file-writer :refer [write-new-format event->delivery-file-name]]))
-
-(defn fix-size-bytes
-  [event]
-  )
 
 (defn counter
   ([] 0)
@@ -46,10 +42,10 @@
              x)) event-wrapped))
 
 (def backup-start-hour "2017-04-14T16") ;; don't change
-(def backup-end-hour "2018-04-20T15")
+(def backup-end-hour "2018-06-12T13")
 
 (def s3-source-bucket "prod-witan-event-log-20180314")
-(def s3-destination-bucket "prod-witan-event-log-20180416")
+(def s3-destination-bucket "prod-witan-event-log-20180612")
 (def local-source-cache-dir (str "./event-log/" s3-source-bucket))
 (def local-destination-cache-dir (str "./event-log/" s3-destination-bucket))
 
